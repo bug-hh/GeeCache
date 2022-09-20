@@ -2,7 +2,10 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="b4a1fe71-6842-4370-b308-d25d57262083" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/Script/probe.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/geecache/peers.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/geecache/geecache.go" beforeDir="false" afterPath="$PROJECT_DIR$/geecache/geecache.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/geecache/http.go" beforeDir="false" afterPath="$PROJECT_DIR$/geecache/http.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
