@@ -1,50 +1,80 @@
 package main
 
 import (
-	"github.com/GeeCache/consistenthash"
+	"flag"
+	"fmt"
 	"log"
-	"strconv"
+	"net/http"
+
+	"github.com/GeeCache/geecache"
 )
 
+var db = map[string]string{
+	"Tom":  "630",
+	"Jack": "589",
+	"Sam":  "567",
+}
+
+func createGroup() *geecache.Group {
+	return geecache.NewGroup("scores", 2<<10, geecache.GetterFunc(
+		func(key string) ([]byte, error) {
+			log.Println("[SlowDB] search key", key)
+			if v, ok := db[key]; ok {
+				return []byte(v), nil
+			}
+			return nil, fmt.Errorf("%s not exist", key)
+		}))
+}
+
+func startCacheServer(addr string, addrs []string, gee *geecache.Group) {
+	peers := geecache.NewHTTPPool(addr)
+	peers.Set(addrs...)
+	gee.RegisterPeers(peers)
+	log.Println("geecache is running at", addr)
+	log.Fatal(http.ListenAndServe(addr[7:], peers))
+}
+
+func startAPIServer(apiAddr string, gee *geecache.Group) {
+	http.Handle("/api", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			key := r.URL.Query().Get("key")
+			view, err := gee.Get(key)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write(view.ByteSlice())
+
+		}))
+	log.Println("fontend server is running at", apiAddr)
+	log.Fatal(http.ListenAndServe(apiAddr[7:], nil))
+
+}
+
 func main() {
-	hash := consistenthash.New(3, func(key []byte) uint32 {
-		i, _ := strconv.Atoi(string(key))
-		return uint32(i)
-	})
+	var port int
+	var api bool
+	flag.IntVar(&port, "port", 8001, "Geecache server port")
+	flag.BoolVar(&api, "api", false, "Start a api server?")
+	flag.Parse()
 
-	// Given the above hash function, this will give replicas with "hashes":
-	// 2, 4, 6, 12, 14, 16, 22, 24, 26
-	hash.Add("6", "4", "2")
-
-	testCases := map[string]string{
-		"2":  "2",
-		"11": "2",
-		"23": "4",
-		"27": "2",
+	apiAddr := "http://localhost:9999"
+	addrMap := map[int]string{
+		8001: "http://localhost:8001",
+		8002: "http://localhost:8002",
+		8003: "http://localhost:8003",
 	}
 
-	for k, v := range testCases {
-		result := hash.Get(k)
-		log.Printf("k: %s, result: %s", k, result)
-		if hash.Get(k) != v {
-			log.Printf("Asking for %s, should have yielded %s", k, v)
-		}
+	var addrs []string
+	for _, v := range addrMap {
+		addrs = append(addrs, v)
 	}
 
-	// Adds 8, 18, 28
-	hash.Add("8")
-
-	// 27 should now map to 8.
-	testCases["27"] = "8"
-
-	for k, v := range testCases {
-		if k == "27" {
-			ret := hash.Get(k)
-			log.Printf("ret: %+v", ret)
-		}
-		if hash.Get(k) != v {
-			log.Printf("Asking for %s, should have yielded %s", k, v)
-		}
+	gee := createGroup()
+	if api {
+		go startAPIServer(apiAddr, gee)
 	}
+	startCacheServer(addrMap[port], []string(addrs), gee)
 
 }
