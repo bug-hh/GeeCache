@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"sync"
+
+	"github.com/GeeCache/singleflight"
 )
 
 type Getter interface {
@@ -19,14 +21,15 @@ func (f GetterFunc) Get(key string) ([]byte, error) {
 type Group struct {
 	name string
 	// 缓存未命中时获取源数据的回调(callback)
-	getter Getter
+	getter    Getter
 	mainCache cache
-	peers PeerPicker
+	peers     PeerPicker
+
+	loader *singleflight.Group
 }
 
-
 var (
-	mu sync.RWMutex
+	mu     sync.RWMutex
 	groups = make(map[string]*Group)
 )
 
@@ -45,11 +48,12 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	defer mu.Unlock()
 
 	g := &Group{
-		name:      name,
-		getter:    getter,
+		name:   name,
+		getter: getter,
 		mainCache: cache{
 			cacheBytes: cacheBytes,
 		},
+		loader: &singleflight.Group{},
 	}
 	groups[name] = g
 	return g
@@ -75,15 +79,25 @@ func (g *Group) Get(key string) (ByteView, error) {
 }
 
 func (g *Group) load(key string) (value ByteView, err error) {
-	if g.peers != nil {
-		if peer, ok := g.peers.PickPeer(key); ok {
-			if value, err := g.getFromPeer(peer, key); err == nil {
-				return value, nil
+	view, err := g.loader.Do(key, func() (interface{}, error) {
+		if g.peers != nil {
+			if peer, ok := g.peers.PickPeer(key); ok {
+				if value, err := g.getFromPeer(peer, key); err == nil {
+					return value, nil
+				}
+				log.Println("[GeeCache] Failed to get from peer", err)
 			}
-			log.Println("[GeeCache] Failed to get from peer", err)
 		}
+
+		return g.getLocally(key)
+
+	})
+
+	if err == nil {
+		return view.(ByteView), nil
 	}
-	return g.getLocally(key)
+
+	return
 }
 
 func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
